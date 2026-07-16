@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sunrise Bakery — Fresh Bread Daily</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem auto;
+        max-width: 720px;
+        color: #222;
+      }
+      img {
+        width: 160px;
+        height: 100px;
+        object-fit: cover;
+        background: #ddd;
+        margin: 4px;
+      }
+      .fake-btn {
+        background: #2b6cb0;
+        color: #fff;
+        padding: 8px 16px;
+        border-radius: 4px;
+        display: inline-block;
+        cursor: pointer;
+        margin: 8px 0;
+      }
+      nav a {
+        margin-right: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <a href="#menu">Menu</a>
+      <a href="#story">Our story</a>
+      <a href="#visit">Visit</a>
+    </nav>
+
+    <h1>Sunrise Bakery</h1>
+    <p>Small-batch sourdough, pastries, and coffee in the heart of town since 1998.</p>
+
+    <!-- heading skip: h1 -> h3 -->
+    <h3 id="story">Our story</h3>
+    <p>
+      What started as a single wood-fired oven is now a neighborhood institution. We mill our own
+      flour and proof every loaf for 48 hours.
+    </p>
+    <p><a href="#story">Read more</a></p>
+
+    <!-- 3 images with no alt -->
+    <img src="IMG_4723.jpg" />
+    <img src="DSC_0042.png" />
+    <img src="bakery-photo-final-v2.jpg" />
+
+    <!-- 2 images with alt="image" -->
+    <img
+      src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='100'%3E%3Crect width='160' height='100' fill='%23c4884a'/%3E%3C/svg%3E"
+      alt="image"
+    />
+    <img
+      src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='100'%3E%3Crect width='160' height='100' fill='%236a8f5f'/%3E%3C/svg%3E"
+      alt="image"
+    />
+
+    <!-- second h1 -->
+    <h1 id="visit">Visit us</h1>
+    <p>Find us at 42 Baker Street. Street parking available on weekends.</p>
+
+    <!-- low-contrast paragraph: #999 on #aaa -->
+    <p style="color: #999; background: #aaa; padding: 4px">Open weekdays 7am to 3pm.</p>
+
+    <!-- icon-only button (unlabeled) -->
+    <button id="cart" type="button">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M2 2h2l2 8h6l2-6H5" stroke="currentColor" fill="none" />
+      </svg>
+    </button>
+
+    <!-- clickable div styled as a button -->
+    <div class="fake-btn" onclick="alert('Subscribed!')">Subscribe to newsletter</div>
+
+    <!-- unlabeled input -->
+    <p>Get our weekly bake schedule:</p>
+    <input type="text" />
+
+    <!-- keyboard trap: 3 buttons whose keydown handler cycles focus among themselves -->
+    <div id="promo-carousel">
+      <button id="trap-1" class="trap" type="button">Previous offer</button>
+      <button id="trap-2" class="trap" type="button">Next offer</button>
+      <button id="trap-3" class="trap" type="button">Claim deal</button>
+    </div>
+
+    <p><a href="#menu">Read more</a></p>
+    <p><a href="#visit">Read more</a></p>
+
+    <script>
+      var traps = ['trap-1', 'trap-2', 'trap-3'].map(function (id) {
+        return document.getElementById(id);
+      });
+      traps.forEach(function (el, i) {
+        el.addEventListener('keydown', function (e) {
+          if (e.key === 'Tab') {
+            e.preventDefault();
+            var step = e.shiftKey ? traps.length - 1 : 1;
+            traps[(i + step) % traps.length].focus();
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

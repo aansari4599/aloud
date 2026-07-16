@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sunrise Bakery — Fresh Bread Daily</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem auto;
+        max-width: 720px;
+        color: #222;
+        background: #fff;
+      }
+      img {
+        width: 160px;
+        height: 100px;
+        object-fit: cover;
+        background: #ddd;
+        margin: 4px;
+      }
+      .btn {
+        background: #2b6cb0;
+        color: #fff;
+        padding: 8px 16px;
+        border-radius: 4px;
+        display: inline-block;
+        cursor: pointer;
+        margin: 8px 0;
+        border: none;
+        font-size: 1rem;
+      }
+      nav a {
+        margin-right: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <a href="#menu">Menu</a>
+      <a href="#story">Our story</a>
+      <a href="#visit">Visit</a>
+    </nav>
+
+    <h1>Sunrise Bakery</h1>
+    <p>Small-batch sourdough, pastries, and coffee in the heart of town since 1998.</p>
+
+    <h2 id="story">Our story</h2>
+    <p>
+      What started as a single wood-fired oven is now a neighborhood institution. We mill our own
+      flour and proof every loaf for 48 hours.
+    </p>
+    <p><a href="#story">Read our full story</a></p>
+
+    <img src="IMG_4723.jpg" alt="Baker sliding sourdough loaves into a wood-fired oven" />
+    <img src="DSC_0042.png" alt="Display case filled with croissants and danishes" />
+    <img src="bakery-photo-final-v2.jpg" alt="Customers chatting at tables outside the bakery" />
+
+    <img
+      src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='100'%3E%3Crect width='160' height='100' fill='%23c4884a'/%3E%3C/svg%3E"
+      alt="Golden crust of a freshly baked country loaf"
+    />
+    <img
+      src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='100'%3E%3Crect width='160' height='100' fill='%236a8f5f'/%3E%3C/svg%3E"
+      alt="Rosemary and olive focaccia cooling on a rack"
+    />
+
+    <h2 id="visit">Visit us</h2>
+    <p>Find us at 42 Baker Street. Street parking available on weekends.</p>
+
+    <p style="color: #222; background: #fff; padding: 4px">Open weekdays 7am to 3pm.</p>
+
+    <button id="cart" type="button" aria-label="View shopping cart">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M2 2h2l2 8h6l2-6H5" stroke="currentColor" fill="none" />
+      </svg>
+    </button>
+
+    <button class="btn" type="button" onclick="alert('Subscribed!')">
+      Subscribe to newsletter
+    </button>
+
+    <p>Get our weekly bake schedule:</p>
+    <label for="email">Email address</label>
+    <input id="email" type="text" />
+
+    <div id="promo-carousel">
+      <button id="offer-prev" type="button">Previous offer</button>
+      <button id="offer-next" type="button">Next offer</button>
+      <button id="offer-claim" type="button">Claim deal</button>
+    </div>
+
+    <p><a href="#menu">See the full menu</a></p>
+    <p><a href="#visit">Plan your visit</a></p>
+  </body>
+</html>
