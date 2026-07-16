@@ -4,3 +4,7 @@ node_modules/
 .env.local
 /data/
 *.log
+.claude
+.codex
+*.md
+*.tsbuildinfo

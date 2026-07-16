@@ -1,7 +1,7 @@
 // Acceptance runner: `npx tsx scripts/verify.ts <cmd> [args]`
 // T-0 implements: db, fixtures. Later cards add: capture|audit|crawl|run|narrate|fix|rerun.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 
@@ -126,6 +126,49 @@ async function cmdDb(): Promise<number> {
   return 0;
 }
 
+/** `capture <url>` — T-A1.1 acceptance: >10 a11y nodes and a screenshot file on disk. */
+async function cmdCapture(url: string | undefined): Promise<number> {
+  if (!url) {
+    console.error('Usage: npx tsx scripts/verify.ts capture <url>');
+    return 2;
+  }
+  const { capturePage, closeBrowser } = await import('../services/browser');
+
+  const countNodes = (node: unknown): number => {
+    if (node === null || typeof node !== 'object') return 0;
+    const children = (node as { children?: unknown[] }).children ?? [];
+    return 1 + children.reduce<number>((sum, child) => sum + countNodes(child), 0);
+  };
+
+  try {
+    const result = await capturePage(url, { allowFile: url.startsWith('file:') });
+    const nodeCount = countNodes(result.snapshot);
+    const screenshotExists = existsSync(result.screenshotPath);
+    console.log(JSON.stringify(result.snapshot, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          url,
+          nodeCount,
+          htmlChars: result.html.length,
+          screenshotPath: result.screenshotPath,
+          screenshotExists,
+        },
+        null,
+        2,
+      ),
+    );
+    if (nodeCount <= 10 || !screenshotExists) {
+      console.error('FAIL: expected >10 a11y nodes and an existing screenshot file');
+      return 1;
+    }
+    console.log('capture OK');
+    return 0;
+  } finally {
+    await closeBrowser();
+  }
+}
+
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   switch (cmd) {
@@ -135,9 +178,12 @@ async function main(): Promise<void> {
     case 'db':
       process.exit(await cmdDb());
       break;
+    case 'capture':
+      process.exit(await cmdCapture(process.argv[3]));
+      break;
     default:
       console.error(
-        `Unknown command: ${cmd ?? '(none)'}\nUsage: npx tsx scripts/verify.ts <db|fixtures>`,
+        `Unknown command: ${cmd ?? '(none)'}\nUsage: npx tsx scripts/verify.ts <db|fixtures|capture>`,
       );
       process.exit(2);
   }
