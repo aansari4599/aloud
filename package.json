@@ -26,6 +26,9 @@
     "react-dom": "^18.3.1",
     "zod": "^3.24.1"
   },
+  "overrides": {
+    "playwright-core": "1.49.0"
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/diff": "^6.0.0",

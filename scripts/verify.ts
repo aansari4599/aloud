@@ -169,6 +169,43 @@ async function cmdCapture(url: string | undefined): Promise<number> {
   }
 }
 
+/** `audit <url>` — T-A1.2 acceptance: rule counts per fixture (broken seeds / good = 0 critical). */
+async function cmdAudit(url: string | undefined): Promise<number> {
+  if (!url) {
+    console.error('Usage: npx tsx scripts/verify.ts audit <url>');
+    return 2;
+  }
+  const { withPage, closeBrowser } = await import('../services/browser');
+  const { auditPage } = await import('../services/auditor');
+  try {
+    const issues = await withPage(url, { allowFile: url.startsWith('file:') }, (page) =>
+      auditPage(page, 'verify'),
+    );
+    const byRule: Record<string, number> = {};
+    for (const issue of issues) byRule[issue.rule] = (byRule[issue.rule] ?? 0) + 1;
+    const critical = issues.filter((i) => i.severity === 'critical').length;
+    console.log(JSON.stringify({ url, total: issues.length, critical, byRule }, null, 2));
+
+    const failures: string[] = [];
+    if (url.includes('fixtures/broken')) {
+      if ((byRule['image-alt'] ?? 0) < 3) failures.push('image-alt < 3');
+      if ((byRule['color-contrast'] ?? 0) < 1) failures.push('color-contrast < 1');
+      if ((byRule['label'] ?? 0) < 1) failures.push('label < 1');
+    }
+    if (url.includes('fixtures/good') && critical > 0) {
+      failures.push(`good fixture has ${critical} critical issues, expected 0`);
+    }
+    if (failures.length > 0) {
+      console.error(`FAIL: ${failures.join('; ')}`);
+      return 1;
+    }
+    console.log('audit OK');
+    return 0;
+  } finally {
+    await closeBrowser();
+  }
+}
+
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   switch (cmd) {
@@ -181,9 +218,12 @@ async function main(): Promise<void> {
     case 'capture':
       process.exit(await cmdCapture(process.argv[3]));
       break;
+    case 'audit':
+      process.exit(await cmdAudit(process.argv[3]));
+      break;
     default:
       console.error(
-        `Unknown command: ${cmd ?? '(none)'}\nUsage: npx tsx scripts/verify.ts <db|fixtures|capture>`,
+        `Unknown command: ${cmd ?? '(none)'}\nUsage: npx tsx scripts/verify.ts <db|fixtures|capture|audit>`,
       );
       process.exit(2);
   }

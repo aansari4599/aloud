@@ -39,10 +39,14 @@ export async function closeBrowser(): Promise<void> {
 }
 
 /**
- * Captures one page: rendered HTML, clipped full-page JPEG screenshot, a11y snapshot.
- * Navigates the browser (ssrf-guarded); writes the screenshot under SCREENSHOT_DIR.
+ * Runs `fn` against a live, ssrf-guarded, navigated page in a fresh context.
+ * The context is always closed afterwards — callers never manage lifecycle.
  */
-export async function capturePage(url: string, opts: SsrfOptions = {}): Promise<CapturedPage> {
+export async function withPage<T>(
+  url: string,
+  opts: SsrfOptions,
+  fn: (page: Page) => Promise<T>,
+): Promise<T> {
   const safeUrl = await ssrfGuard(url, opts);
   const browser = await getBrowser();
   const context = await browser.newContext({ viewport: VIEWPORT, acceptDownloads: false });
@@ -50,13 +54,23 @@ export async function capturePage(url: string, opts: SsrfOptions = {}): Promise<
     const page = await context.newPage();
     await guardRedirects(page, safeUrl);
     await navigate(page, safeUrl.href);
+    return await fn(page);
+  } finally {
+    await context.close();
+  }
+}
+
+/**
+ * Captures one page: rendered HTML, clipped full-page JPEG screenshot, a11y snapshot.
+ * Navigates the browser (ssrf-guarded); writes the screenshot under SCREENSHOT_DIR.
+ */
+export async function capturePage(url: string, opts: SsrfOptions = {}): Promise<CapturedPage> {
+  return withPage(url, opts, async (page) => {
     const html = await page.content();
     const snapshot = await page.accessibility.snapshot();
     const screenshotPath = await takeScreenshot(page);
     return { html, screenshotPath, snapshot };
-  } finally {
-    await context.close();
-  }
+  });
 }
 
 /** Re-checks ssrf on cross-origin top-frame navigations (redirect chains, ARCHITECTURE §10.4). */
