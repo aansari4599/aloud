@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import { DATABASE_PATH } from './constants';
+import type { AuditJob, AuditStatus, ErrorKind, Issue, ProgressEvent } from './types';
 
 // DDL is normative in PRD §19.3.
 const DDL = `
@@ -32,3 +33,117 @@ function open(): Database.Database {
 
 // Runs once at module load (boot). Server-only import.
 export const db = open();
+
+// Prepared statements: created once at module scope, reused (AGENTS.md efficiency standards).
+const stmtInsertAudit = db.prepare(
+  `INSERT INTO audits (id, url, crawl, status, progress_json, created_at) VALUES (?, ?, ?, 'queued', '[]', ?)`,
+);
+const stmtSetStatus = db.prepare(`UPDATE audits SET status = ? WHERE id = ?`);
+const stmtFailAudit = db.prepare(
+  `UPDATE audits SET status = 'failed', error_kind = ? WHERE id = ?`,
+);
+const stmtGetAudit = db.prepare(`SELECT * FROM audits WHERE id = ?`);
+const stmtSetProgress = db.prepare(`UPDATE audits SET progress_json = ? WHERE id = ?`);
+const stmtInsertPage = db.prepare(
+  `INSERT INTO pages (id, audit_id, url, screenshot_path, snapshot_json, utterances_json) VALUES (?, ?, ?, ?, ?, ?)`,
+);
+const stmtInsertIssue = db.prepare(
+  `INSERT INTO issues (id, page_id, source, rule, severity, selector, html, explanation, alt_verdict_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+);
+const stmtCountIssues = db.prepare(
+  `SELECT COUNT(*) AS n FROM issues JOIN pages ON issues.page_id = pages.id WHERE pages.audit_id = ?`,
+);
+
+interface AuditRow {
+  id: string;
+  url: string;
+  crawl: number;
+  status: AuditStatus;
+  error_kind: ErrorKind | null;
+  score_before: number | null;
+  score_after: number | null;
+  progress_json: string;
+  created_at: string;
+}
+
+/** Inserts a queued audit row. Writes db. */
+export function createAudit(id: string, url: string, crawl: boolean): void {
+  stmtInsertAudit.run(id, url, crawl ? 1 : 0, new Date().toISOString());
+}
+
+/** Writes db. */
+export function setAuditStatus(id: string, status: AuditStatus): void {
+  stmtSetStatus.run(status, id);
+}
+
+/** Marks the audit failed with its ErrorKind. Writes db. */
+export function failAudit(id: string, kind: ErrorKind): void {
+  stmtFailAudit.run(kind, id);
+}
+
+/** Appends one ProgressEvent to the audit's append-only log. Writes db. */
+export function appendProgress(id: string, step: string, detail?: string): void {
+  const row = stmtGetAudit.get(id) as AuditRow | undefined;
+  if (!row) return;
+  const events = JSON.parse(row.progress_json) as ProgressEvent[];
+  events.push({ at: new Date().toISOString(), step, ...(detail === undefined ? {} : { detail }) });
+  stmtSetProgress.run(JSON.stringify(events), id);
+}
+
+/** Reads db. */
+export function getAuditJob(id: string): AuditJob | undefined {
+  const row = stmtGetAudit.get(id) as AuditRow | undefined;
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    url: row.url,
+    crawl: row.crawl === 1,
+    status: row.status,
+    ...(row.error_kind === null ? {} : { errorKind: row.error_kind }),
+    progress: JSON.parse(row.progress_json) as ProgressEvent[],
+    ...(row.score_before === null ? {} : { scoreBefore: row.score_before }),
+    ...(row.score_after === null ? {} : { scoreAfter: row.score_after }),
+    createdAt: row.created_at,
+  };
+}
+
+/** Total issues across an audit's pages. Reads db. */
+export function countIssues(auditId: string): number {
+  return (stmtCountIssues.get(auditId) as { n: number }).n;
+}
+
+/** Persists a page and its issues in one transaction (AGENTS.md: one transaction per page). Writes db. */
+export const savePageWithIssues = db.transaction(
+  (
+    page: {
+      id: string;
+      auditId: string;
+      url: string;
+      screenshotPath: string;
+      snapshotJson: string;
+    },
+    issues: Issue[],
+  ): void => {
+    stmtInsertPage.run(
+      page.id,
+      page.auditId,
+      page.url,
+      page.screenshotPath,
+      page.snapshotJson,
+      '[]',
+    );
+    for (const issue of issues) {
+      stmtInsertIssue.run(
+        issue.id,
+        page.id,
+        issue.source,
+        issue.rule,
+        issue.severity,
+        issue.selector,
+        issue.html,
+        issue.explanation ?? null,
+        issue.altVerdict === undefined ? null : JSON.stringify(issue.altVerdict),
+      );
+    }
+  },
+);

@@ -206,6 +206,77 @@ async function cmdAudit(url: string | undefined): Promise<number> {
   }
 }
 
+/** `crawl <url>` — T-A1.3 acceptance: broken fixture → 2 pages (about.html linked), good → 1. */
+async function cmdCrawl(url: string | undefined): Promise<number> {
+  if (!url) {
+    console.error('Usage: npx tsx scripts/verify.ts crawl <url>');
+    return 2;
+  }
+  const { crawl } = await import('../services/crawler');
+  const { closeBrowser } = await import('../services/browser');
+  try {
+    const pages = await crawl(url, { allowFile: url.startsWith('file:') });
+    console.log(JSON.stringify(pages, null, 2));
+
+    const failures: string[] = [];
+    if (url.includes('fixtures/broken') && pages.length !== 2) {
+      failures.push(`broken fixture expected 2 pages, got ${pages.length}`);
+    }
+    if (url.includes('fixtures/good') && pages.length !== 1) {
+      failures.push(`good fixture expected 1 page, got ${pages.length}`);
+    }
+    if (failures.length > 0) {
+      console.error(`FAIL: ${failures.join('; ')}`);
+      return 1;
+    }
+    console.log('crawl OK');
+    return 0;
+  } finally {
+    await closeBrowser();
+  }
+}
+
+/** `run <url>` — T-A1.4 acceptance: polls to done, issue count > 5, progress log ≥ 4 steps. */
+async function cmdRun(url: string | undefined): Promise<number> {
+  if (!url) {
+    console.error('Usage: npx tsx scripts/verify.ts run <url>');
+    return 2;
+  }
+  const { enqueueAudit } = await import('../services/queue');
+  const { closeBrowser } = await import('../services/browser');
+  const { getAuditJob, countIssues } = await import('../lib/db');
+  try {
+    const id = enqueueAudit(url, true, { allowFile: url.startsWith('file:') });
+    let job = getAuditJob(id);
+    while (job && job.status !== 'done' && job.status !== 'failed') {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      job = getAuditJob(id);
+    }
+    const issueCount = countIssues(id);
+    console.log(
+      JSON.stringify(
+        { id, status: job?.status, errorKind: job?.errorKind, issueCount, progress: job?.progress },
+        null,
+        2,
+      ),
+    );
+
+    const failures: string[] = [];
+    if (job?.status !== 'done') failures.push(`status ${job?.status}, expected done`);
+    if (issueCount <= 5) failures.push(`issue count ${issueCount}, expected > 5`);
+    if ((job?.progress.length ?? 0) < 4)
+      failures.push(`progress ${job?.progress.length} steps, expected ≥ 4`);
+    if (failures.length > 0) {
+      console.error(`FAIL: ${failures.join('; ')}`);
+      return 1;
+    }
+    console.log('run OK');
+    return 0;
+  } finally {
+    await closeBrowser();
+  }
+}
+
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   switch (cmd) {
@@ -221,9 +292,15 @@ async function main(): Promise<void> {
     case 'audit':
       process.exit(await cmdAudit(process.argv[3]));
       break;
+    case 'crawl':
+      process.exit(await cmdCrawl(process.argv[3]));
+      break;
+    case 'run':
+      process.exit(await cmdRun(process.argv[3]));
+      break;
     default:
       console.error(
-        `Unknown command: ${cmd ?? '(none)'}\nUsage: npx tsx scripts/verify.ts <db|fixtures|capture|audit>`,
+        `Unknown command: ${cmd ?? '(none)'}\nUsage: npx tsx scripts/verify.ts <db|fixtures|capture|audit|crawl|run>`,
       );
       process.exit(2);
   }

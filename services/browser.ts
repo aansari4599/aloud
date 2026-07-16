@@ -61,16 +61,21 @@ export async function withPage<T>(
 }
 
 /**
- * Captures one page: rendered HTML, clipped full-page JPEG screenshot, a11y snapshot.
- * Navigates the browser (ssrf-guarded); writes the screenshot under SCREENSHOT_DIR.
+ * Extracts capture artifacts from an already-navigated page: rendered HTML, clipped
+ * full-page JPEG screenshot, a11y snapshot. Writes the screenshot under SCREENSHOT_DIR.
+ */
+export async function captureFromPage(page: Page): Promise<CapturedPage> {
+  const html = await page.content();
+  const snapshot = await page.accessibility.snapshot();
+  const screenshotPath = await takeScreenshot(page);
+  return { html, screenshotPath, snapshot };
+}
+
+/**
+ * Captures one page end-to-end: navigates (ssrf-guarded) then extracts artifacts.
  */
 export async function capturePage(url: string, opts: SsrfOptions = {}): Promise<CapturedPage> {
-  return withPage(url, opts, async (page) => {
-    const html = await page.content();
-    const snapshot = await page.accessibility.snapshot();
-    const screenshotPath = await takeScreenshot(page);
-    return { html, screenshotPath, snapshot };
-  });
+  return withPage(url, opts, captureFromPage);
 }
 
 /** Re-checks ssrf on cross-origin top-frame navigations (redirect chains, ARCHITECTURE §10.4). */

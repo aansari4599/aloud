@@ -13,6 +13,7 @@ export const SPA_SETTLE_DELAY_MS = 1_000; // after networkidle (ARCHITECTURE §1
 
 // Crawl (PRD §F1)
 export const CRAWL_MAX_PAGES = 8;
+export const ROBOTS_TIMEOUT_MS = 3_000;
 
 // Concurrency (ARCHITECTURE §8)
 export const JOB_CONCURRENCY = 2;
