@@ -1,8 +1,16 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
-import { DATABASE_PATH } from './constants';
-import type { AuditJob, AuditStatus, ErrorKind, Issue, ProgressEvent } from './types';
+import { DATABASE_PATH } from './paths';
+import type {
+  AuditJob,
+  AuditStatus,
+  ErrorKind,
+  Issue,
+  PageResult,
+  ProgressEvent,
+  Utterance,
+} from './types';
 
 // DDL is normative in PRD §19.3.
 const DDL = `
@@ -110,6 +118,57 @@ export function getAuditJob(id: string): AuditJob | undefined {
 /** Total issues across an audit's pages. Reads db. */
 export function countIssues(auditId: string): number {
   return (stmtCountIssues.get(auditId) as { n: number }).n;
+}
+
+const stmtPagesForAudit = db.prepare(
+  `SELECT id, url, screenshot_path, utterances_json FROM pages WHERE audit_id = ?`,
+);
+const stmtIssuesForPage = db.prepare(
+  `SELECT id, source, rule, severity, selector, html, explanation, alt_verdict_json FROM issues WHERE page_id = ?`,
+);
+
+interface IssueRow {
+  id: string;
+  source: Issue['source'];
+  rule: string;
+  severity: Issue['severity'];
+  selector: string;
+  html: string;
+  explanation: string | null;
+  alt_verdict_json: string | null;
+}
+
+/**
+ * Pages with issues + utterances for the API payload (PRD §19.2).
+ * snapshot_json deliberately never leaves the server (AGENTS.md payload discipline). Reads db.
+ */
+export function getPages(auditId: string): PageResult[] {
+  const rows = stmtPagesForAudit.all(auditId) as {
+    id: string;
+    url: string;
+    screenshot_path: string;
+    utterances_json: string;
+  }[];
+  return rows.map((row) => ({
+    id: row.id,
+    auditId,
+    url: row.url,
+    screenshotPath: row.screenshot_path,
+    utterances: JSON.parse(row.utterances_json) as Utterance[],
+    issues: (stmtIssuesForPage.all(row.id) as IssueRow[]).map((r): Issue => ({
+      id: r.id,
+      pageId: row.id,
+      source: r.source,
+      rule: r.rule,
+      severity: r.severity,
+      selector: r.selector,
+      html: r.html,
+      ...(r.explanation === null ? {} : { explanation: r.explanation }),
+      ...(r.alt_verdict_json === null
+        ? {}
+        : { altVerdict: JSON.parse(r.alt_verdict_json) as Issue['altVerdict'] }),
+    })),
+  }));
 }
 
 /** Persists a page and its issues in one transaction (AGENTS.md: one transaction per page). Writes db. */

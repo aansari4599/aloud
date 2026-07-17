@@ -1,7 +1,7 @@
 // Every tunable lives here (AGENTS.md: no magic numbers at call sites).
 // ARCHITECTURE §8 budgets reference these values.
+// Client-importable: no node builtins — filesystem paths live in lib/paths.ts.
 
-import { dirname, join } from 'node:path';
 import type { Severity } from './types';
 
 // Playwright capture (ARCHITECTURE §8)
@@ -51,8 +51,3 @@ export const GRADE_BANDS: ReadonlyArray<{ min: number; grade: string }> = [
 export const POLL_INTERVAL_MS = 1_500;
 export const CAPTION_FALLBACK_WPM = 160;
 export const TEXT_CHUNK_MAX_WORDS = 12;
-
-// Paths — /data in prod (Railway volume), ./data locally
-export const DATABASE_PATH = process.env.DATABASE_PATH ?? './data/aloud.db';
-export const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR ?? './data/shots';
-export const PATCHED_DIR = join(dirname(DATABASE_PATH), 'patched');

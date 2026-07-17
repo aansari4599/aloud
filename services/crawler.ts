@@ -64,8 +64,9 @@ export async function crawl(startUrl: string, ssrf: SsrfOptions = {}): Promise<s
 
     let hrefs: string[];
     try {
+      // String expression: function callbacks break under Next's webpack minification.
       hrefs = await withPage(current, ssrf, (page) =>
-        page.$$eval('a[href]', (anchors) => anchors.map((a) => (a as HTMLAnchorElement).href)),
+        page.evaluate<string[]>(`Array.from(document.querySelectorAll('a[href]'), (a) => a.href)`),
       );
     } catch {
       continue; // page failed to load — it stays listed, its links are lost

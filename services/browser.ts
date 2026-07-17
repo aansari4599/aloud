@@ -4,12 +4,12 @@ import { nanoid } from 'nanoid';
 import { chromium, errors as pwErrors, type Browser, type Page } from 'playwright';
 import {
   NAV_TIMEOUT_MS,
-  SCREENSHOT_DIR,
   SCREENSHOT_JPEG_QUALITY,
   SCREENSHOT_MAX_HEIGHT_PX,
   SPA_SETTLE_DELAY_MS,
   VIEWPORT,
 } from '../lib/constants';
+import { SCREENSHOT_DIR } from '../lib/paths';
 import { AppError } from '../lib/errors';
 import { ssrfGuard, type SsrfOptions } from '../lib/ssrf';
 
@@ -107,8 +107,9 @@ async function navigate(page: Page, href: string): Promise<void> {
     if (!(err instanceof pwErrors.TimeoutError)) {
       throw new AppError('UNREACHABLE', `Navigation failed: ${href}`);
     }
+    // String expression: function callbacks break under Next's webpack minification.
     const rendered = await page
-      .evaluate(() => document.body?.childElementCount ?? 0)
+      .evaluate<number>('document.body ? document.body.childElementCount : 0')
       .catch(() => 0);
     if (rendered === 0) {
       throw new AppError('TIMEOUT', `Nothing rendered within ${NAV_TIMEOUT_MS} ms: ${href}`);
@@ -121,7 +122,8 @@ async function navigate(page: Page, href: string): Promise<void> {
 async function takeScreenshot(page: Page): Promise<string> {
   mkdirSync(SCREENSHOT_DIR, { recursive: true });
   const path = join(SCREENSHOT_DIR, `${nanoid(10)}.jpg`);
-  const fullHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+  // String expression: function callbacks break under Next's webpack minification.
+  const fullHeight = await page.evaluate<number>('document.documentElement.scrollHeight');
   const height = Math.min(Math.max(fullHeight, VIEWPORT.height), SCREENSHOT_MAX_HEIGHT_PX);
   await page.screenshot({
     path,

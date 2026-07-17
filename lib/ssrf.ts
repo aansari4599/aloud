@@ -1,7 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { resolve, sep } from 'node:path';
-import { PATCHED_DIR } from './constants';
+import { PATCHED_DIR } from './paths';
 import { AppError } from './errors';
 
 // file:// is only ever allowed for our own fixtures and patched copies (ARCHITECTURE §10),
