@@ -101,8 +101,9 @@ async function guardRedirects(page: Page, original: URL): Promise<void> {
 
 /** Navigates with the 15 s budget; a timeout with content rendered proceeds (partial audit beats TIMEOUT). */
 async function navigate(page: Page, href: string): Promise<void> {
+  let response: Response | null = null;
   try {
-    await page.goto(href, { waitUntil: 'networkidle', timeout: NAV_TIMEOUT_MS });
+    response = await page.goto(href, { waitUntil: 'networkidle', timeout: NAV_TIMEOUT_MS });
   } catch (err) {
     if (!(err instanceof pwErrors.TimeoutError)) {
       throw new AppError('UNREACHABLE', `Navigation failed: ${href}`);
@@ -116,6 +117,38 @@ async function navigate(page: Page, href: string): Promise<void> {
     }
   }
   await page.waitForTimeout(SPA_SETTLE_DELAY_MS); // SPA settle (ARCHITECTURE §16)
+  if (!href.startsWith('file:')) {
+    await detectWalls(page, response);
+  }
+}
+
+type Response = Awaited<ReturnType<Page['goto']>>;
+
+/** Heuristics from ARCHITECTURE §9: unsupported content, Cloudflare challenges, login walls. */
+async function detectWalls(page: Page, response: Response): Promise<void> {
+  const contentType = response?.headers()['content-type'] ?? '';
+  if (contentType !== '' && !contentType.includes('text/html')) {
+    throw new AppError('UNSUPPORTED_CONTENT', `Not an HTML page: ${contentType}`);
+  }
+
+  const title = await page.title().catch(() => '');
+  if (/just a moment|attention required|access denied|verify you are human/i.test(title)) {
+    throw new AppError('BOT_BLOCKED', 'Bot-protection challenge page detected');
+  }
+
+  const status = response?.status() ?? 200;
+  // String expression: function callbacks break under Next's webpack minification.
+  const hasPasswordField = await page
+    .evaluate<boolean>(`!!document.querySelector('input[type="password"]')`)
+    .catch(() => false);
+  if (
+    status === 401 ||
+    status === 403 ||
+    /\/(login|signin)\b/i.test(page.url()) ||
+    hasPasswordField
+  ) {
+    throw new AppError('LOGIN_WALL', 'Page appears to require a login');
+  }
 }
 
 /** Full-page JPEG clipped to SCREENSHOT_MAX_HEIGHT_PX. Writes under SCREENSHOT_DIR. */

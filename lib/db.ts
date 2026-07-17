@@ -120,6 +120,13 @@ export function countIssues(auditId: string): number {
   return (stmtCountIssues.get(auditId) as { n: number }).n;
 }
 
+const stmtSetUtterances = db.prepare(`UPDATE pages SET utterances_json = ? WHERE id = ?`);
+
+/** Writes db. */
+export function setPageUtterances(pageId: string, utterances: Utterance[]): void {
+  stmtSetUtterances.run(JSON.stringify(utterances), pageId);
+}
+
 const stmtPagesForAudit = db.prepare(
   `SELECT id, url, screenshot_path, utterances_json FROM pages WHERE audit_id = ?`,
 );

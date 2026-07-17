@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import { ErrorCard } from '../../../components/ErrorCard';
 import { IssueCard } from '../../../components/IssueCard';
 import { ProgressLog } from '../../../components/ProgressLog';
 import { POLL_INTERVAL_MS } from '../../../lib/constants';
@@ -77,15 +78,7 @@ export default function AuditPage({ params }: { params: { id: string } }) {
 
       {running && <ProgressLog events={job.progress} running />}
 
-      {job.status === 'failed' && (
-        <div className="w-full max-w-xl rounded-xl border border-red-900 bg-red-950/40 p-6">
-          <h2 className="font-semibold text-red-200">Audit failed</h2>
-          <p className="mt-1 text-sm text-red-300">
-            {job.errorKind ?? 'INTERNAL'} — try another URL or explore the gallery.
-          </p>
-          <BackHome />
-        </div>
-      )}
+      {job.status === 'failed' && <ErrorCard kind={job.errorKind ?? 'INTERNAL'} />}
 
       {job.status === 'done' && pages !== undefined && <Results pages={pages} />}
     </Shell>

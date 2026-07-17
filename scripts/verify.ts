@@ -175,15 +175,21 @@ async function cmdAudit(url: string | undefined): Promise<number> {
     console.error('Usage: npx tsx scripts/verify.ts audit <url>');
     return 2;
   }
-  const { withPage, closeBrowser } = await import('../services/browser');
+  const { withPage, captureFromPage, closeBrowser } = await import('../services/browser');
   const { auditPage } = await import('../services/auditor');
+  const { keyboardWalk } = await import('../services/checks/keyboard');
+  const { headingChecks } = await import('../services/checks/headings');
   try {
-    const issues = await withPage(url, { allowFile: url.startsWith('file:') }, (page) =>
-      auditPage(page, 'verify'),
-    );
+    const issues = await withPage(url, { allowFile: url.startsWith('file:') }, async (page) => {
+      const axeIssues = await auditPage(page, 'verify');
+      const kbIssues = await keyboardWalk(page, 'verify');
+      const { html } = await captureFromPage(page);
+      return [...axeIssues, ...kbIssues, ...headingChecks(html, 'verify')];
+    });
     const byRule: Record<string, number> = {};
     for (const issue of issues) byRule[issue.rule] = (byRule[issue.rule] ?? 0) + 1;
     const critical = issues.filter((i) => i.severity === 'critical').length;
+    const kbCount = issues.filter((i) => i.rule.startsWith('kb-')).length;
     console.log(JSON.stringify({ url, total: issues.length, critical, byRule }, null, 2));
 
     const failures: string[] = [];
@@ -191,9 +197,11 @@ async function cmdAudit(url: string | undefined): Promise<number> {
       if ((byRule['image-alt'] ?? 0) < 3) failures.push('image-alt < 3');
       if ((byRule['color-contrast'] ?? 0) < 1) failures.push('color-contrast < 1');
       if ((byRule['label'] ?? 0) < 1) failures.push('label < 1');
+      if ((byRule['kb-trap'] ?? 0) < 1) failures.push('kb-trap < 1');
     }
-    if (url.includes('fixtures/good') && critical > 0) {
-      failures.push(`good fixture has ${critical} critical issues, expected 0`);
+    if (url.includes('fixtures/good')) {
+      if (critical > 0) failures.push(`good fixture has ${critical} critical issues, expected 0`);
+      if (kbCount > 0) failures.push(`good fixture has ${kbCount} kb-* issues, expected 0`);
     }
     if (failures.length > 0) {
       console.error(`FAIL: ${failures.join('; ')}`);
@@ -277,6 +285,57 @@ async function cmdRun(url: string | undefined): Promise<number> {
   }
 }
 
+/** `narrate <url>` — T-A2.1 acceptance: grammar output per PRD §19.1. */
+async function cmdNarrate(url: string | undefined): Promise<number> {
+  if (!url) {
+    console.error('Usage: npx tsx scripts/verify.ts narrate <url>');
+    return 2;
+  }
+  const { withPage, captureFromPage, closeBrowser } = await import('../services/browser');
+  const { auditPage } = await import('../services/auditor');
+  const { buildUtterances } = await import('../services/narrator');
+  try {
+    const { capture, issues } = await withPage(
+      url,
+      { allowFile: url.startsWith('file:') },
+      async (page) => ({
+        capture: await captureFromPage(page),
+        issues: await auditPage(page, 'verify'),
+      }),
+    );
+    const utterances = buildUtterances(capture.snapshot, capture.html, issues);
+    for (const u of utterances) {
+      console.log(
+        `${String(u.index).padStart(3)}  ${u.text}${u.issueId !== undefined ? '   ⚑' : ''}`,
+      );
+    }
+    const linked = utterances.filter((u) => u.issueId !== undefined).length;
+    console.log(JSON.stringify({ url, count: utterances.length, linkedToIssues: linked }));
+
+    const all = utterances.map((u) => u.text).join('\n');
+    const failures: string[] = [];
+    if (url.includes('fixtures/broken')) {
+      if (!all.includes('button, unlabeled')) failures.push('missing "button, unlabeled"');
+      if (!/image, I M G/.test(all)) failures.push('missing "image, I M G" spelling');
+      if (utterances.length < 15)
+        failures.push(`only ${utterances.length} utterances, expected ≥ 15`);
+    }
+    if (url.includes('fixtures/good')) {
+      if (all.includes('button, unlabeled'))
+        failures.push('good fixture contains "button, unlabeled"');
+      if (/image, I M G/.test(all)) failures.push('good fixture contains "image, I M G"');
+    }
+    if (failures.length > 0) {
+      console.error(`FAIL: ${failures.join('; ')}`);
+      return 1;
+    }
+    console.log('narrate OK');
+    return 0;
+  } finally {
+    await closeBrowser();
+  }
+}
+
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   switch (cmd) {
@@ -298,9 +357,12 @@ async function main(): Promise<void> {
     case 'run':
       process.exit(await cmdRun(process.argv[3]));
       break;
+    case 'narrate':
+      process.exit(await cmdNarrate(process.argv[3]));
+      break;
     default:
       console.error(
-        `Unknown command: ${cmd ?? '(none)'}\nUsage: npx tsx scripts/verify.ts <db|fixtures|capture|audit|crawl|run>`,
+        `Unknown command: ${cmd ?? '(none)'}\nUsage: npx tsx scripts/verify.ts <db|fixtures|capture|audit|crawl|run|narrate>`,
       );
       process.exit(2);
   }

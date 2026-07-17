@@ -7,12 +7,17 @@ import {
   failAudit,
   savePageWithIssues,
   setAuditStatus,
+  setPageUtterances,
 } from '../lib/db';
 import { AppError } from '../lib/errors';
 import { log } from '../lib/log';
 import type { SsrfOptions } from '../lib/ssrf';
-import { withPage, captureFromPage } from './browser';
+import type { Issue } from '../lib/types';
+import { withPage, captureFromPage, type A11ySnapshot } from './browser';
 import { auditPage } from './auditor';
+import { headingChecks } from './checks/headings';
+import { keyboardWalk } from './checks/keyboard';
+import { buildUtterances } from './narrator';
 import { crawl } from './crawler';
 
 const jobs = new PQueue({ concurrency: JOB_CONCURRENCY });
@@ -28,14 +33,29 @@ export function enqueueAudit(url: string, crawlFlag: boolean, ssrf: SsrfOptions 
   return id;
 }
 
+interface PageData {
+  pageId: string;
+  url: string;
+  html: string;
+  snapshot: A11ySnapshot | null;
+  issues: Issue[];
+  issueCount: number;
+  imageCount: number;
+}
+
 /** Navigates one page once, capturing artifacts and axe issues together. Writes db + browser. */
-async function auditOnePage(jobId: string, pageUrl: string, ssrf: SsrfOptions): Promise<number> {
+async function auditOnePage(jobId: string, pageUrl: string, ssrf: SsrfOptions): Promise<PageData> {
   const pageId = nanoid(10);
   const started = Date.now();
-  const { capture, issues } = await withPage(pageUrl, ssrf, async (page) => ({
-    capture: await captureFromPage(page),
-    issues: await auditPage(page, pageId),
-  }));
+  const { capture, issues } = await withPage(pageUrl, ssrf, async (page) => {
+    const axeIssues = await auditPage(page, pageId);
+    const kbIssues = await keyboardWalk(page, pageId);
+    const captured = await captureFromPage(page);
+    return {
+      capture: captured,
+      issues: [...axeIssues, ...kbIssues, ...headingChecks(captured.html, pageId)],
+    };
+  });
   savePageWithIssues(
     {
       id: pageId,
@@ -46,9 +66,20 @@ async function auditOnePage(jobId: string, pageUrl: string, ssrf: SsrfOptions): 
     },
     issues,
   );
+  const imageCount = (capture.html.match(/<img\b/gi) ?? []).length;
   log(jobId, 'page-audited', Date.now() - started, { url: pageUrl, issues: issues.length });
-  return issues.length;
+  return {
+    pageId,
+    url: pageUrl,
+    html: capture.html,
+    snapshot: capture.snapshot,
+    issues,
+    issueCount: issues.length,
+    imageCount,
+  };
 }
+
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /** The job pipeline: statuses per PRD §19, every stage appends a ProgressEvent. */
 async function runAudit(
@@ -58,34 +89,47 @@ async function runAudit(
   ssrf: SsrfOptions,
 ): Promise<void> {
   try {
+    const site = new URL(url);
+    const siteName = site.protocol === 'file:' ? url.split('/').slice(-2).join('/') : site.hostname;
+
     setAuditStatus(id, 'loading');
-    appendProgress(id, 'Loading page', url);
-    const rootIssues = await auditOnePage(id, url, ssrf);
-    appendProgress(id, `Found ${rootIssues} issues on the first page`);
+    appendProgress(id, `Loading ${siteName}…`);
+    const root = await auditOnePage(id, url, ssrf);
+    appendProgress(id, `Found ${plural(root.imageCount, 'image')}…`);
+    appendProgress(id, `Running accessibility checks… ${plural(root.issueCount, 'issue')} so far`);
 
     setAuditStatus(id, 'crawling');
-    let urls: string[] = [new URL(url).href];
+    let urls: string[] = [site.href];
     if (crawlFlag) {
-      appendProgress(id, 'Discovering pages');
+      appendProgress(id, 'Looking for more pages…');
       urls = await crawl(url, ssrf);
-      appendProgress(id, `Found ${urls.length} pages to audit`);
+      appendProgress(id, `Auditing ${plural(urls.length, 'page')} total`);
     }
 
     setAuditStatus(id, 'auditing');
     const rest = urls.slice(1);
+    const pageDatas: PageData[] = [root];
     const pages = new PQueue({ concurrency: PAGES_IN_PARALLEL });
     await Promise.all(
       rest.map((pageUrl) =>
         pages.add(async () => {
-          appendProgress(id, 'Auditing page', pageUrl);
-          const count = await auditOnePage(id, pageUrl, ssrf);
-          appendProgress(id, `Found ${count} issues`, pageUrl);
+          appendProgress(id, `Checking ${pageUrl.split('/').pop() ?? pageUrl}…`);
+          const result = await auditOnePage(id, pageUrl, ssrf);
+          pageDatas.push(result);
+          appendProgress(id, `${plural(result.issueCount, 'issue')} found`, pageUrl);
         }),
       ),
     );
 
     setAuditStatus(id, 'narrating');
-    appendProgress(id, 'Building narration'); // TODO (T-A2.1): generate utterances per page
+    appendProgress(id, 'Listening to the page like a screen reader…');
+    let utteranceTotal = 0;
+    for (const data of pageDatas) {
+      const utterances = buildUtterances(data.snapshot, data.html, data.issues);
+      setPageUtterances(data.pageId, utterances);
+      utteranceTotal += utterances.length;
+    }
+    appendProgress(id, `Narration ready — ${plural(utteranceTotal, 'utterance')}`);
 
     setAuditStatus(id, 'scoring');
     appendProgress(id, 'Computing AccessScore'); // TODO (T-A3.2): scorer + explanations

@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
+import type { ErrorKind } from '../lib/types';
+import { errorLine } from './ErrorCard';
 
 /** Landing URL form: POST /api/audits → redirect to /a/[id]. Calls the API. */
 export function AuditForm() {
@@ -22,9 +24,12 @@ export function AuditForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: normalized, crawl }),
       });
-      const body = (await res.json()) as { id?: string; error?: { message: string } };
+      const body = (await res.json()) as {
+        id?: string;
+        error?: { kind?: ErrorKind; message: string };
+      };
       if (!res.ok || !body.id) {
-        setError(body.error?.message ?? 'Something went wrong — try another URL.');
+        setError(errorLine(body.error?.kind));
         setBusy(false);
         return;
       }
