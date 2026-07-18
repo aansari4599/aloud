@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { ErrorCard } from '../../../components/ErrorCard';
-import { IssueCard } from '../../../components/IssueCard';
+import { FixesPanel } from '../../../components/FixesPanel';
+import { IssueCard, headlineFor } from '../../../components/IssueCard';
 import { ProgressLog } from '../../../components/ProgressLog';
 import { ReplayPlayer } from '../../../components/ReplayPlayer';
 import { ScoreDial } from '../../../components/ScoreDial';
@@ -84,7 +85,13 @@ export default function AuditPage({ params }: { params: { id: string } }) {
       {job.status === 'failed' && <ErrorCard kind={job.errorKind ?? 'INTERNAL'} />}
 
       {job.status === 'done' && pages !== undefined && (
-        <Results pages={pages} scoreBefore={job.scoreBefore} scoreAfter={job.scoreAfter} />
+        <Results
+          pages={pages}
+          scoreBefore={job.scoreBefore}
+          scoreAfter={job.scoreAfter}
+          auditId={job.id}
+          siteUrl={job.url}
+        />
       )}
     </Shell>
   );
@@ -94,10 +101,14 @@ function Results({
   pages,
   scoreBefore,
   scoreAfter,
+  auditId,
+  siteUrl,
 }: {
   pages: PageResult[];
   scoreBefore?: number;
   scoreAfter?: number;
+  auditId: string;
+  siteUrl: string;
 }) {
   const issues = pages.flatMap((p) => p.issues);
   const bySeverity = new Map<Severity, Issue[]>(
@@ -136,7 +147,17 @@ function Results({
         </section>
       )}
 
-      <div className="mb-8 flex flex-wrap gap-4">
+      <section aria-labelledby="fix-it" className="mb-8">
+        <h2
+          id="fix-it"
+          className="mb-3 text-sm font-semibold uppercase tracking-widest text-zinc-500"
+        >
+          Fix it
+        </h2>
+        <FixesPanel auditId={auditId} pages={pages} scoreBefore={scoreBefore} siteUrl={siteUrl} />
+      </section>
+
+      <div className="mb-4 flex flex-wrap gap-4">
         {SEVERITY_ORDER.map((s) => (
           <div
             key={s}
@@ -150,6 +171,24 @@ function Results({
           <p className="text-2xl font-bold text-zinc-100">{pages.length}</p>
           <p className="text-xs uppercase tracking-wide text-zinc-500">pages</p>
         </div>
+      </div>
+
+      <div className="mb-8 flex flex-wrap gap-2">
+        {[
+          ...issues.reduce(
+            (m, i) => m.set(i.rule, (m.get(i.rule) ?? 0) + 1),
+            new Map<string, number>(),
+          ),
+        ]
+          .sort((a, b) => b[1] - a[1])
+          .map(([rule, count]) => (
+            <span
+              key={rule}
+              className="rounded-full border border-surface-line px-3 py-1 text-xs text-zinc-400"
+            >
+              {headlineFor(rule)} <span className="font-bold text-zinc-200">× {count}</span>
+            </span>
+          ))}
       </div>
 
       {SEVERITY_ORDER.map((s) => {

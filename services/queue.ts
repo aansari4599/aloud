@@ -2,11 +2,13 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { nanoid } from 'nanoid';
 import PQueue from 'p-queue';
-import { JOB_CONCURRENCY, PAGES_IN_PARALLEL } from '../lib/constants';
+import { explainIssues } from '../lib/ai';
+import { EXPLAIN_MAX_ISSUES, JOB_CONCURRENCY, PAGES_IN_PARALLEL } from '../lib/constants';
 import {
   appendProgress,
   createAudit,
   failAudit,
+  saveExplanations,
   savePageWithIssues,
   setAuditStatus,
   setPageUtterances,
@@ -145,7 +147,28 @@ async function runAudit(
     const before = scoreSite(pageDatas.map((p) => p.issues));
     setScoreBefore(id, before);
     appendProgress(id, `AccessScore: ${before} (${gradeFor(before)})`);
-    // TODO (T-B2.3): batched explainIssues call for top issues once OPENAI_API_KEY lands
+
+    if ((process.env.OPENAI_API_KEY ?? '') !== '') {
+      appendProgress(id, 'Explaining issues in plain English…');
+      const severityRank: Record<string, number> = {
+        critical: 0,
+        serious: 1,
+        moderate: 2,
+        minor: 3,
+      };
+      const topIssues = pageDatas
+        .flatMap((p) => p.issues)
+        .sort((a, b) => severityRank[a.severity] - severityRank[b.severity])
+        .slice(0, EXPLAIN_MAX_ISSUES);
+      const explanations = await explainIssues(topIssues).catch(() => null);
+      if (explanations !== null) {
+        saveExplanations(
+          topIssues
+            .map((issue, i) => ({ issueId: issue.id, explanation: explanations[i] ?? '' }))
+            .filter((e) => e.explanation !== ''),
+        );
+      }
+    }
 
     setAuditStatus(id, 'done');
     appendProgress(id, 'Audit complete');

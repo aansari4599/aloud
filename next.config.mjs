@@ -11,7 +11,7 @@ const nextConfig = {
       '@axe-core/playwright',
       'axe-core',
       'openai',
-      'octokit',
+      // octokit deliberately NOT external: its ESM-only internals need webpack bundling
     ],
   },
 };

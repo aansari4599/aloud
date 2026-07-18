@@ -230,6 +230,14 @@ export const saveFixes = db.transaction((fixes: Fix[]): void => {
 });
 
 const stmtMarkApplied = db.prepare(`UPDATE fixes SET applied = 1 WHERE id = ?`);
+const stmtSetExplanation = db.prepare(`UPDATE issues SET explanation = ? WHERE id = ?`);
+
+/** Persists explanations for a batch of issues in one transaction. Writes db. */
+export const saveExplanations = db.transaction(
+  (entries: { issueId: string; explanation: string }[]): void => {
+    for (const e of entries) stmtSetExplanation.run(e.explanation, e.issueId);
+  },
+);
 
 /** Writes db. */
 export function markFixApplied(fixId: string): void {

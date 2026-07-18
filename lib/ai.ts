@@ -114,6 +114,78 @@ Score 0-5: 0 = missing or meaningless (e.g. "image", "photo123"), 2 = vague or k
 5 = concise and conveys the image's purpose in context.
 Reply ONLY with JSON: {"score": <0-5>, "verdict": "<one short sentence>", "suggestedAlt": "<better alt text, no 'image of' prefix>"}`;
 
+const ExplanationsSchema = z.object({
+  explanations: z.array(z.string()),
+});
+
+const EXPLAIN_SYSTEM = `You are an accessibility expert writing for non-developers.
+For EACH issue in the JSON array you receive, write exactly one plain-English sentence describing
+what a real user misses or struggles with because of this issue — user impact, not technical detail.
+Reply ONLY with JSON: {"explanations": ["<sentence for issue 1>", "<sentence for issue 2>", ...]}
+in the same order as the input. Same number of sentences as input issues.`;
+
+/**
+ * One batched MINI call for up to EXPLAIN_MAX_ISSUES issues (PRD §19.4, AGENTS.md: never
+ * loop single calls for batchable work). Returns sentences aligned to input order. Cached.
+ */
+export async function explainIssues(
+  issues: { rule: string; selector: string; html: string }[],
+): Promise<string[]> {
+  if (issues.length === 0) return [];
+  const model = MODEL_MINI();
+  const compact = issues.map((i) => ({
+    rule: i.rule,
+    selector: i.selector.slice(0, 100),
+    html: i.html.slice(0, 300),
+  }));
+  const canonical = JSON.stringify(compact);
+  const result = await cached('explainIssues', model, canonical, async () => {
+    const raw = await completeJson(model, EXPLAIN_SYSTEM, [
+      { type: 'text', text: JSON.stringify(compact, null, 1) },
+    ]);
+    return ExplanationsSchema.parse(raw);
+  });
+  return result.explanations;
+}
+
+const PrBodySchema = z.object({
+  markdown: z.string().min(1),
+});
+
+const PR_BODY_SYSTEM = `You write concise GitHub pull request descriptions.
+You receive accessibility fixes (rule, rationale) and before/after scores.
+Write friendly markdown: one-line summary, a table of fixes (Rule | What changed),
+and the score improvement. No preamble outside the markdown.
+Reply ONLY with JSON: {"markdown": "<the PR body>"}`;
+
+/** PR body synthesis (PRD §19.4). MINI model, cached; deterministic fallback on failure. */
+export async function writePrBody(
+  fixes: { rule: string; rationale: string }[],
+  scores: { before: number; after: number },
+): Promise<string> {
+  const model = MODEL_MINI();
+  const canonical = JSON.stringify({ fixes, scores });
+  const fallback = (): string =>
+    [
+      `## Accessibility fixes by [Aloud](https://github.com/aansari4599/aloud)`,
+      '',
+      `AccessScore: **${scores.before} → ${scores.after}**`,
+      '',
+      '| Rule | What changed |',
+      '|---|---|',
+      ...fixes.map((f) => `| \`${f.rule}\` | ${f.rationale.replace(/\|/g, '\\|')} |`),
+    ].join('\n');
+  try {
+    const result = await cached('writePrBody', model, canonical, async () => {
+      const raw = await completeJson(model, PR_BODY_SYSTEM, [{ type: 'text', text: canonical }]);
+      return PrBodySchema.parse(raw);
+    });
+    return result.markdown;
+  } catch {
+    return fallback();
+  }
+}
+
 const FixSchema = z.object({
   patchedHtml: z.string().min(1),
   rationale: z.string().min(1),
