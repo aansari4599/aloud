@@ -1,10 +1,12 @@
+import Link from 'next/link';
 import { AuditForm } from '../components/AuditForm';
+import { GALLERY_SITES, GRADE_BANDS } from '../lib/constants';
+import { findLatestAuditByUrlPattern } from '../lib/db';
 
-const GALLERY_PLACEHOLDERS = [
-  { name: 'Government portal', note: 'Pre-audited example — coming with the gallery' },
-  { name: 'News site', note: 'Pre-audited example — coming with the gallery' },
-  { name: 'E-commerce store', note: 'Pre-audited example — coming with the gallery' },
-];
+// Gallery reads the local db — fresh on every request, works with no external network.
+export const dynamic = 'force-dynamic';
+
+const gradeFor = (score: number): string => GRADE_BANDS.find((b) => score >= b.min)?.grade ?? 'F';
 
 export default function Landing() {
   return (
@@ -36,15 +38,37 @@ export default function Landing() {
           Or explore a pre-audited site
         </h2>
         <ul className="grid gap-4 sm:grid-cols-3">
-          {GALLERY_PLACEHOLDERS.map((g) => (
-            <li
-              key={g.name}
-              className="rounded-xl border border-dashed border-surface-line bg-surface-raised/50 p-5"
-            >
-              <p className="font-semibold text-zinc-300">{g.name}</p>
-              <p className="mt-1 text-sm text-zinc-500">{g.note}</p>
-            </li>
-          ))}
+          {GALLERY_SITES.map((site) => {
+            const audit = findLatestAuditByUrlPattern(site.match);
+            if (audit === undefined || audit.scoreBefore === null) {
+              return (
+                <li
+                  key={site.name}
+                  className="rounded-xl border border-dashed border-surface-line bg-surface-raised/50 p-5"
+                >
+                  <p className="font-semibold text-zinc-300">{site.name}</p>
+                  <p className="mt-1 text-sm text-zinc-500">Pre-audited example — coming soon</p>
+                </li>
+              );
+            }
+            return (
+              <li key={site.name}>
+                <Link
+                  href={`/r/${audit.id}`}
+                  className="block rounded-xl border border-surface-line bg-surface-raised p-5 transition hover:border-accent/60"
+                >
+                  <p className="text-3xl font-extrabold text-accent">
+                    {audit.scoreBefore}
+                    <span className="ml-2 text-sm font-semibold uppercase text-zinc-500">
+                      grade {gradeFor(audit.scoreBefore)}
+                    </span>
+                  </p>
+                  <p className="mt-2 font-semibold text-zinc-300">{site.name}</p>
+                  <p className="mt-1 text-sm text-zinc-500">View the full report →</p>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
         <p className="mt-8 text-center text-xs text-zinc-600">
           AccessScore is a heuristic, not a WCAG certification.

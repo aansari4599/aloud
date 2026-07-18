@@ -106,6 +106,10 @@ async function navigate(page: Page, href: string): Promise<void> {
     response = await page.goto(href, { waitUntil: 'networkidle', timeout: NAV_TIMEOUT_MS });
   } catch (err) {
     if (!(err instanceof pwErrors.TimeoutError)) {
+      // Blocked download / non-HTML resource aborts navigation before headers are readable.
+      if (err instanceof Error && err.message.includes('ERR_ABORTED')) {
+        throw new AppError('UNSUPPORTED_CONTENT', `Not a navigable HTML page: ${href}`);
+      }
       throw new AppError('UNREACHABLE', `Navigation failed: ${href}`);
     }
     // String expression: function callbacks break under Next's webpack minification.

@@ -8,17 +8,19 @@ import {
   savePageWithIssues,
   setAuditStatus,
   setPageUtterances,
+  setScoreBefore,
 } from '../lib/db';
 import { AppError } from '../lib/errors';
 import { log } from '../lib/log';
 import type { SsrfOptions } from '../lib/ssrf';
 import type { Issue } from '../lib/types';
 import { withPage, captureFromPage, type A11ySnapshot } from './browser';
-import { auditPage } from './auditor';
+import { auditPage, altQualityIssues } from './auditor';
 import { headingChecks } from './checks/headings';
 import { keyboardWalk } from './checks/keyboard';
 import { buildUtterances } from './narrator';
 import { crawl } from './crawler';
+import { gradeFor, scoreSite } from './scorer';
 
 const jobs = new PQueue({ concurrency: JOB_CONCURRENCY });
 
@@ -50,10 +52,11 @@ async function auditOnePage(jobId: string, pageUrl: string, ssrf: SsrfOptions): 
   const { capture, issues } = await withPage(pageUrl, ssrf, async (page) => {
     const axeIssues = await auditPage(page, pageId);
     const kbIssues = await keyboardWalk(page, pageId);
+    const altIssues = await altQualityIssues(page, pageId);
     const captured = await captureFromPage(page);
     return {
       capture: captured,
-      issues: [...axeIssues, ...kbIssues, ...headingChecks(captured.html, pageId)],
+      issues: [...axeIssues, ...kbIssues, ...altIssues, ...headingChecks(captured.html, pageId)],
     };
   });
   savePageWithIssues(
@@ -132,7 +135,11 @@ async function runAudit(
     appendProgress(id, `Narration ready — ${plural(utteranceTotal, 'utterance')}`);
 
     setAuditStatus(id, 'scoring');
-    appendProgress(id, 'Computing AccessScore'); // TODO (T-A3.2): scorer + explanations
+    appendProgress(id, 'Computing AccessScore…');
+    const before = scoreSite(pageDatas.map((p) => p.issues));
+    setScoreBefore(id, before);
+    appendProgress(id, `AccessScore: ${before} (${gradeFor(before)})`);
+    // TODO (T-B2.3): batched explainIssues call for top issues once OPENAI_API_KEY lands
 
     setAuditStatus(id, 'done');
     appendProgress(id, 'Audit complete');

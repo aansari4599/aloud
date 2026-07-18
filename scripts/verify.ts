@@ -5,6 +5,16 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 
+// Minimal .env loader (Next.js loads it for the server; scripts need it too — no dotenv dep).
+try {
+  for (const line of readFileSync(join(process.cwd(), '.env'), 'utf8').split('\n')) {
+    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
+  }
+} catch {
+  // no .env — fine, AI-dependent commands will degrade gracefully
+}
+
 interface FixtureCounts {
   imgsMissingAlt: number;
   imgsAltImage: number;
@@ -176,15 +186,16 @@ async function cmdAudit(url: string | undefined): Promise<number> {
     return 2;
   }
   const { withPage, captureFromPage, closeBrowser } = await import('../services/browser');
-  const { auditPage } = await import('../services/auditor');
+  const { auditPage, altQualityIssues } = await import('../services/auditor');
   const { keyboardWalk } = await import('../services/checks/keyboard');
   const { headingChecks } = await import('../services/checks/headings');
   try {
     const issues = await withPage(url, { allowFile: url.startsWith('file:') }, async (page) => {
       const axeIssues = await auditPage(page, 'verify');
       const kbIssues = await keyboardWalk(page, 'verify');
+      const altIssues = await altQualityIssues(page, 'verify');
       const { html } = await captureFromPage(page);
-      return [...axeIssues, ...kbIssues, ...headingChecks(html, 'verify')];
+      return [...axeIssues, ...kbIssues, ...altIssues, ...headingChecks(html, 'verify')];
     });
     const byRule: Record<string, number> = {};
     for (const issue of issues) byRule[issue.rule] = (byRule[issue.rule] ?? 0) + 1;
@@ -198,6 +209,8 @@ async function cmdAudit(url: string | undefined): Promise<number> {
       if ((byRule['color-contrast'] ?? 0) < 1) failures.push('color-contrast < 1');
       if ((byRule['label'] ?? 0) < 1) failures.push('label < 1');
       if ((byRule['kb-trap'] ?? 0) < 1) failures.push('kb-trap < 1');
+      if ((process.env.OPENAI_API_KEY ?? '') !== '' && (byRule['alt-poor-quality'] ?? 0) < 2)
+        failures.push('alt-poor-quality < 2');
     }
     if (url.includes('fixtures/good')) {
       if (critical > 0) failures.push(`good fixture has ${critical} critical issues, expected 0`);
@@ -271,7 +284,8 @@ async function cmdRun(url: string | undefined): Promise<number> {
 
     const failures: string[] = [];
     if (job?.status !== 'done') failures.push(`status ${job?.status}, expected done`);
-    if (issueCount <= 5) failures.push(`issue count ${issueCount}, expected > 5`);
+    if (url.includes('fixtures/broken') && issueCount <= 5)
+      failures.push(`issue count ${issueCount}, expected > 5`);
     if ((job?.progress.length ?? 0) < 4)
       failures.push(`progress ${job?.progress.length} steps, expected ≥ 4`);
     if (failures.length > 0) {

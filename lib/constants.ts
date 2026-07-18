@@ -47,6 +47,13 @@ export const GRADE_BANDS: ReadonlyArray<{ min: number; grade: string }> = [
   { min: 0, grade: 'F' },
 ];
 
+// Gallery (PRD §F8) — landing shows the latest done audit matching each pattern.
+export const GALLERY_SITES: ReadonlyArray<{ name: string; match: string }> = [
+  { name: 'Sunrise Bakery — demo site (broken)', match: '%fixtures/broken/index.html' },
+  { name: 'Sunrise Bakery — demo site (fixed)', match: '%fixtures/good/index.html' },
+  { name: 'example.com', match: 'https://example.com%' },
+];
+
 // Client (PRD §8.1, §19.1)
 export const POLL_INTERVAL_MS = 1_500;
 export const CAPTION_FALLBACK_WPM = 160;

@@ -120,7 +120,41 @@ export function countIssues(auditId: string): number {
   return (stmtCountIssues.get(auditId) as { n: number }).n;
 }
 
+const stmtSetScoreBefore = db.prepare(`UPDATE audits SET score_before = ? WHERE id = ?`);
+const stmtSetScoreAfter = db.prepare(`UPDATE audits SET score_after = ? WHERE id = ?`);
+
+/** Writes db. */
+export function setScoreBefore(id: string, score: number): void {
+  stmtSetScoreBefore.run(score, id);
+}
+
+/** Writes db. */
+export function setScoreAfter(id: string, score: number): void {
+  stmtSetScoreAfter.run(score, id);
+}
+
 const stmtSetUtterances = db.prepare(`UPDATE pages SET utterances_json = ? WHERE id = ?`);
+const stmtScreenshotPath = db.prepare(`SELECT screenshot_path FROM pages WHERE id = ?`);
+const stmtLatestByUrl = db.prepare(
+  `SELECT id, url, score_before FROM audits WHERE status = 'done' AND url LIKE ? ORDER BY created_at DESC LIMIT 1`,
+);
+
+/** Latest completed audit whose url matches a LIKE pattern (gallery lookup). Reads db. */
+export function findLatestAuditByUrlPattern(
+  pattern: string,
+): { id: string; url: string; scoreBefore: number | null } | undefined {
+  const row = stmtLatestByUrl.get(pattern) as
+    { id: string; url: string; score_before: number | null } | undefined;
+  return row === undefined
+    ? undefined
+    : { id: row.id, url: row.url, scoreBefore: row.score_before };
+}
+
+/** Screenshot file path for a page id (paths are written by us, never user input). Reads db. */
+export function getScreenshotPath(pageId: string): string | undefined {
+  const row = stmtScreenshotPath.get(pageId) as { screenshot_path: string } | undefined;
+  return row?.screenshot_path;
+}
 
 /** Writes db. */
 export function setPageUtterances(pageId: string, utterances: Utterance[]): void {

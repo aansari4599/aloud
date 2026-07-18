@@ -5,6 +5,9 @@ import { useEffect, useRef, useState } from 'react';
 import { ErrorCard } from '../../../components/ErrorCard';
 import { IssueCard } from '../../../components/IssueCard';
 import { ProgressLog } from '../../../components/ProgressLog';
+import { ReplayPlayer } from '../../../components/ReplayPlayer';
+import { ScoreDial } from '../../../components/ScoreDial';
+import { VisionSim } from '../../../components/VisionSim';
 import { POLL_INTERVAL_MS } from '../../../lib/constants';
 import type { AuditJob, Issue, PageResult, Severity } from '../../../lib/types';
 
@@ -80,19 +83,59 @@ export default function AuditPage({ params }: { params: { id: string } }) {
 
       {job.status === 'failed' && <ErrorCard kind={job.errorKind ?? 'INTERNAL'} />}
 
-      {job.status === 'done' && pages !== undefined && <Results pages={pages} />}
+      {job.status === 'done' && pages !== undefined && (
+        <Results pages={pages} scoreBefore={job.scoreBefore} scoreAfter={job.scoreAfter} />
+      )}
     </Shell>
   );
 }
 
-function Results({ pages }: { pages: PageResult[] }) {
+function Results({
+  pages,
+  scoreBefore,
+  scoreAfter,
+}: {
+  pages: PageResult[];
+  scoreBefore?: number;
+  scoreAfter?: number;
+}) {
   const issues = pages.flatMap((p) => p.issues);
   const bySeverity = new Map<Severity, Issue[]>(
     SEVERITY_ORDER.map((s) => [s, issues.filter((i) => i.severity === s)]),
   );
+  const narrated = pages.find((p) => p.utterances.length > 0);
 
   return (
     <div className="w-full">
+      {scoreBefore !== undefined && (
+        <div className="mb-10 flex justify-center">
+          <ScoreDial before={scoreBefore} after={scoreAfter} />
+        </div>
+      )}
+      {narrated !== undefined && (
+        <section aria-labelledby="hear-it" className="mb-8">
+          <h2
+            id="hear-it"
+            className="mb-3 text-sm font-semibold uppercase tracking-widest text-zinc-500"
+          >
+            Hear it
+          </h2>
+          <ReplayPlayer utterances={narrated.utterances} />
+        </section>
+      )}
+
+      {pages[0] !== undefined && (
+        <section aria-labelledby="see-it" className="mb-8">
+          <h2
+            id="see-it"
+            className="mb-3 text-sm font-semibold uppercase tracking-widest text-zinc-500"
+          >
+            See it
+          </h2>
+          <VisionSim src={`/api/screenshots/${pages[0].id}`} siteUrl={pages[0].url} />
+        </section>
+      )}
+
       <div className="mb-8 flex flex-wrap gap-4">
         {SEVERITY_ORDER.map((s) => (
           <div
