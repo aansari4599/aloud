@@ -229,6 +229,13 @@ export const saveFixes = db.transaction((fixes: Fix[]): void => {
   }
 });
 
+const stmtMarkApplied = db.prepare(`UPDATE fixes SET applied = 1 WHERE id = ?`);
+
+/** Writes db. */
+export function markFixApplied(fixId: string): void {
+  stmtMarkApplied.run(fixId);
+}
+
 /** All fixes for an audit. Reads db. */
 export function getFixesForAudit(auditId: string): Fix[] {
   const rows = stmtFixesForAudit.all(auditId) as {

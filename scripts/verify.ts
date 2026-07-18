@@ -393,6 +393,62 @@ async function cmdFix(auditIdArg: string | undefined): Promise<number> {
   return 0;
 }
 
+/** `rerun [auditId]` — T-A3.2 acceptance: before < 60, after ≥ 90, fixed narration clean. */
+async function cmdRerun(auditIdArg: string | undefined): Promise<number> {
+  const { rerunAudit } = await import('../services/patcher');
+  const { closeBrowser } = await import('../services/browser');
+  const { db } = await import('../lib/db');
+
+  const auditId =
+    auditIdArg ??
+    (
+      db
+        .prepare(
+          `SELECT id FROM audits WHERE status='done' AND url LIKE '%fixtures/broken/index.html' ORDER BY created_at DESC LIMIT 1`,
+        )
+        .get() as { id: string } | undefined
+    )?.id;
+  if (auditId === undefined) {
+    console.error('No broken-fixture audit found. Run: verify.ts run <broken fixture> first.');
+    return 2;
+  }
+
+  try {
+    const result = await rerunAudit(auditId);
+    const afterText = result.pages
+      .flatMap((p) => p.utterances)
+      .map((u) => u.text)
+      .join('\n');
+    const afterRules = result.pages.flatMap((p) => p.issues).map((i) => i.rule);
+    console.log(
+      JSON.stringify(
+        {
+          auditId,
+          scoreBefore: result.scoreBefore,
+          scoreAfter: result.scoreAfter,
+          remainingIssues: afterRules,
+        },
+        null,
+        2,
+      ),
+    );
+
+    const failures: string[] = [];
+    if (result.scoreBefore >= 60) failures.push(`before ${result.scoreBefore}, expected < 60`);
+    if (result.scoreAfter < 90) failures.push(`after ${result.scoreAfter}, expected ≥ 90`);
+    if (afterText.includes('button, unlabeled'))
+      failures.push('after-narration still contains "button, unlabeled"');
+    if (failures.length > 0) {
+      console.error(`FAIL: ${failures.join('; ')}`);
+      return 1;
+    }
+    console.log('rerun OK');
+    return 0;
+  } finally {
+    await closeBrowser();
+  }
+}
+
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   switch (cmd) {
@@ -419,6 +475,9 @@ async function main(): Promise<void> {
       break;
     case 'fix':
       process.exit(await cmdFix(process.argv[3]));
+      break;
+    case 'rerun':
+      process.exit(await cmdRerun(process.argv[3]));
       break;
     default:
       console.error(
