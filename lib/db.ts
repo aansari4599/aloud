@@ -6,6 +6,7 @@ import type {
   AuditJob,
   AuditStatus,
   ErrorKind,
+  Fix,
   Issue,
   PageResult,
   ProgressEvent,
@@ -209,6 +210,42 @@ export function getPages(auditId: string): PageResult[] {
         ? {}
         : { altVerdict: JSON.parse(r.alt_verdict_json) as Issue['altVerdict'] }),
     })),
+  }));
+}
+
+const stmtInsertFix = db.prepare(
+  `INSERT OR REPLACE INTO fixes (id, issue_id, diff, patched_html, rationale, applied) VALUES (?, ?, ?, ?, ?, ?)`,
+);
+const stmtFixesForAudit = db.prepare(
+  `SELECT fixes.id, fixes.issue_id, fixes.diff, fixes.patched_html, fixes.rationale, fixes.applied
+   FROM fixes JOIN issues ON fixes.issue_id = issues.id JOIN pages ON issues.page_id = pages.id
+   WHERE pages.audit_id = ?`,
+);
+
+/** Persists fixes in one transaction. Writes db. */
+export const saveFixes = db.transaction((fixes: Fix[]): void => {
+  for (const f of fixes) {
+    stmtInsertFix.run(f.id, f.issueId, f.diff, f.patchedHtml, f.rationale, f.applied ? 1 : 0);
+  }
+});
+
+/** All fixes for an audit. Reads db. */
+export function getFixesForAudit(auditId: string): Fix[] {
+  const rows = stmtFixesForAudit.all(auditId) as {
+    id: string;
+    issue_id: string;
+    diff: string;
+    patched_html: string;
+    rationale: string;
+    applied: number;
+  }[];
+  return rows.map((r) => ({
+    id: r.id,
+    issueId: r.issue_id,
+    diff: r.diff,
+    patchedHtml: r.patched_html,
+    rationale: r.rationale,
+    applied: r.applied === 1,
   }));
 }
 

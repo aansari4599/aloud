@@ -24,6 +24,22 @@ const MODEL_MINI = (): string => process.env.OPENAI_MODEL_MINI ?? 'gpt-4o-mini';
 // Generous output budget: "thinking" models spend completion tokens on reasoning first.
 const MAX_OUTPUT_TOKENS = 3_000;
 const CALL_TIMEOUT_MS = 45_000;
+const RETRY_DELAYS_MS = [10_000, 30_000]; // free-tier rate limits are per-minute
+
+/** Retries 429/5xx with backoff — free-tier RPM limits hit hard under parallel calls. */
+async function withRetry<T>(fn: string, call: () => Promise<T>): Promise<T> {
+  for (const delay of RETRY_DELAYS_MS) {
+    try {
+      return await call();
+    } catch (err) {
+      const status = (err as { status?: number }).status ?? 0;
+      if (status !== 429 && status < 500) throw err;
+      log('ai', `${fn}-retry`, delay, { status });
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  return call();
+}
 
 const stmtCacheGet = db.prepare(`SELECT value_json FROM ai_cache WHERE key = ?`);
 const stmtCacheSet = db.prepare(
@@ -44,7 +60,7 @@ async function cached<T>(
     return JSON.parse(hit.value_json) as T;
   }
   const started = Date.now();
-  const result = await call();
+  const result = await withRetry(fn, call);
   stmtCacheSet.run(key, JSON.stringify(result), new Date().toISOString());
   log('ai', fn, Date.now() - started, { cache: 'miss', model });
   return result;
@@ -97,6 +113,59 @@ const SCORE_ALT_SYSTEM = `You are an accessibility expert judging the quality of
 Score 0-5: 0 = missing or meaningless (e.g. "image", "photo123"), 2 = vague or keyword-stuffed,
 5 = concise and conveys the image's purpose in context.
 Reply ONLY with JSON: {"score": <0-5>, "verdict": "<one short sentence>", "suggestedAlt": "<better alt text, no 'image of' prefix>"}`;
+
+const FixSchema = z.object({
+  patchedHtml: z.string().min(1),
+  rationale: z.string().min(1),
+});
+
+export interface GeneratedFix {
+  patchedHtml: string;
+  rationale: string;
+}
+
+const GENERATE_FIX_SYSTEM = `You are an accessibility engineer. You receive one offending HTML element,
+its surrounding markup for context, and the accessibility issue found. Return the corrected element.
+Rules:
+- Minimal edit: change only what fixes the issue. Keep every existing attribute and class.
+- Plain HTML/ARIA edits only. NEVER add, rename, or invent CSS classes or styles.
+- The patchedHtml must be the corrected outerHTML of the SAME element.
+- rationale: one short sentence explaining the fix.
+Reply ONLY with JSON: {"patchedHtml": "<corrected element>", "rationale": "<one sentence>"}`;
+
+/** Contextual patch for one issue (PRD §19.4). MAIN model, temperature 0.2, cached. */
+export async function generateFix(
+  issue: {
+    rule: string;
+    severity: string;
+    selector: string;
+    html: string;
+    altVerdict?: AltVerdict;
+  },
+  context: string,
+): Promise<GeneratedFix> {
+  const model = MODEL_MAIN();
+  const canonical = `${issue.rule}|${issue.html}|${context}`;
+  return cached('generateFix', model, canonical, async () => {
+    const suggested =
+      issue.altVerdict === undefined
+        ? ''
+        : `\nA vision model suggests this alt text: "${issue.altVerdict.suggestedAlt}"`;
+    const raw = await completeJson(model, GENERATE_FIX_SYSTEM, [
+      {
+        type: 'text',
+        text: `Issue: ${issue.rule} (${issue.severity}) at ${issue.selector}${suggested}
+
+Offending element:
+${issue.html}
+
+Surrounding context:
+${context}`,
+      },
+    ]);
+    return FixSchema.parse(raw);
+  });
+}
 
 /** Vision judgment of alt-text quality (PRD §19.4). Calls the model (cached). */
 export async function scoreAlt(imagePng: Buffer, currentAlt: string): Promise<AltVerdict> {

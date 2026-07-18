@@ -350,6 +350,49 @@ async function cmdNarrate(url: string | undefined): Promise<number> {
   }
 }
 
+/** `fix [auditId]` — T-A3.1 acceptance: ≥ 6 parsing diffs, no invented class names. */
+async function cmdFix(auditIdArg: string | undefined): Promise<number> {
+  const { parsePatch } = await import('diff');
+  const { generateFixes } = await import('../services/fixer');
+  const { db } = await import('../lib/db');
+
+  const auditId =
+    auditIdArg ??
+    (
+      db
+        .prepare(
+          `SELECT id FROM audits WHERE status='done' AND url LIKE '%fixtures/broken/index.html' ORDER BY created_at DESC LIMIT 1`,
+        )
+        .get() as { id: string } | undefined
+    )?.id;
+  if (auditId === undefined) {
+    console.error('No broken-fixture audit found. Run: verify.ts run <broken fixture> first.');
+    return 2;
+  }
+
+  const fixes = await generateFixes(auditId);
+  for (const f of fixes.slice(0, 3)) {
+    console.log(`--- ${f.issueId}: ${f.rationale}\n${f.diff}`);
+  }
+
+  const failures: string[] = [];
+  if (fixes.length < 6) failures.push(`only ${fixes.length} fixes, expected ≥ 6`);
+  for (const f of fixes) {
+    try {
+      if (parsePatch(f.diff).length === 0) failures.push(`empty diff for ${f.issueId}`);
+    } catch {
+      failures.push(`unparseable diff for ${f.issueId}`);
+    }
+  }
+  console.log(JSON.stringify({ auditId, fixes: fixes.length }));
+  if (failures.length > 0) {
+    console.error(`FAIL: ${failures.join('; ')}`);
+    return 1;
+  }
+  console.log('fix OK');
+  return 0;
+}
+
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   switch (cmd) {
@@ -374,9 +417,12 @@ async function main(): Promise<void> {
     case 'narrate':
       process.exit(await cmdNarrate(process.argv[3]));
       break;
+    case 'fix':
+      process.exit(await cmdFix(process.argv[3]));
+      break;
     default:
       console.error(
-        `Unknown command: ${cmd ?? '(none)'}\nUsage: npx tsx scripts/verify.ts <db|fixtures|capture|audit|crawl|run|narrate>`,
+        `Unknown command: ${cmd ?? '(none)'}\nUsage: npx tsx scripts/verify.ts <db|fixtures|capture|audit|crawl|run|narrate|fix>`,
       );
       process.exit(2);
   }

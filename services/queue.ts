@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { nanoid } from 'nanoid';
 import PQueue from 'p-queue';
 import { JOB_CONCURRENCY, PAGES_IN_PARALLEL } from '../lib/constants';
@@ -12,6 +14,7 @@ import {
 } from '../lib/db';
 import { AppError } from '../lib/errors';
 import { log } from '../lib/log';
+import { PAGE_HTML_DIR } from '../lib/paths';
 import type { SsrfOptions } from '../lib/ssrf';
 import type { Issue } from '../lib/types';
 import { withPage, captureFromPage, type A11ySnapshot } from './browser';
@@ -69,6 +72,9 @@ async function auditOnePage(jobId: string, pageUrl: string, ssrf: SsrfOptions): 
     },
     issues,
   );
+  // Rendered HTML on disk — fixer needs surrounding context, patcher applies fixes to it.
+  mkdirSync(PAGE_HTML_DIR, { recursive: true });
+  writeFileSync(join(PAGE_HTML_DIR, `${pageId}.html`), capture.html);
   const imageCount = (capture.html.match(/<img\b/gi) ?? []).length;
   log(jobId, 'page-audited', Date.now() - started, { url: pageUrl, issues: issues.length });
   return {
