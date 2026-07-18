@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { nanoid } from 'nanoid';
 import PQueue from 'p-queue';
-import { explainIssues } from '../lib/ai';
+import { aiStats, explainIssues } from '../lib/ai';
 import { EXPLAIN_MAX_ISSUES, JOB_CONCURRENCY, PAGES_IN_PARALLEL } from '../lib/constants';
 import {
   appendProgress,
@@ -99,6 +99,8 @@ async function runAudit(
   crawlFlag: boolean,
   ssrf: SsrfOptions,
 ): Promise<void> {
+  const jobStarted = Date.now();
+  const statsBefore = { ...aiStats };
   try {
     const site = new URL(url);
     const siteName = site.protocol === 'file:' ? url.split('/').slice(-2).join('/') : site.hostname;
@@ -172,6 +174,14 @@ async function runAudit(
 
     setAuditStatus(id, 'done');
     appendProgress(id, 'Audit complete');
+    const hits = aiStats.hits - statsBefore.hits;
+    const misses = aiStats.misses - statsBefore.misses;
+    const total = hits + misses;
+    log(id, 'job-complete', Date.now() - jobStarted, {
+      pages: pageDatas.length,
+      aiCalls: total,
+      cacheHitRate: total === 0 ? 1 : Math.round((hits / total) * 100) / 100,
+    });
   } catch (err) {
     const kind = err instanceof AppError ? err.kind : 'INTERNAL';
     const message = err instanceof Error ? err.message : String(err);

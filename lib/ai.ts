@@ -41,6 +41,9 @@ async function withRetry<T>(fn: string, call: () => Promise<T>): Promise<T> {
   return call();
 }
 
+/** Process-wide cache counters — queue logs the per-job delta (ARCHITECTURE §13). */
+export const aiStats = { hits: 0, misses: 0 };
+
 const stmtCacheGet = db.prepare(`SELECT value_json FROM ai_cache WHERE key = ?`);
 const stmtCacheSet = db.prepare(
   `INSERT OR REPLACE INTO ai_cache (key, value_json, created_at) VALUES (?, ?, ?)`,
@@ -56,12 +59,14 @@ async function cached<T>(
   const key = createHash('sha256').update(`${fn}${model}${canonicalInput}`).digest('hex');
   const hit = stmtCacheGet.get(key) as { value_json: string } | undefined;
   if (hit !== undefined) {
+    aiStats.hits += 1;
     log('ai', fn, 0, { cache: 'hit', model });
     return JSON.parse(hit.value_json) as T;
   }
   const started = Date.now();
   const result = await withRetry(fn, call);
   stmtCacheSet.run(key, JSON.stringify(result), new Date().toISOString());
+  aiStats.misses += 1;
   log('ai', fn, Date.now() - started, { cache: 'miss', model });
   return result;
 }
