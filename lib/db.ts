@@ -35,6 +35,9 @@ CREATE INDEX IF NOT EXISTS idx_fixes_issue ON fixes(issue_id);
 function open(): Database.Database {
   mkdirSync(dirname(DATABASE_PATH), { recursive: true });
   const database = new Database(DATABASE_PATH);
+  // next build evaluates route modules in parallel workers — they race on this open.
+  // busy_timeout makes contenders wait instead of throwing SQLITE_BUSY.
+  database.pragma('busy_timeout = 5000');
   database.pragma('journal_mode = WAL');
   database.exec(DDL);
   return database;
