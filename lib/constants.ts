@@ -48,9 +48,10 @@ export const GRADE_BANDS: ReadonlyArray<{ min: number; grade: string }> = [
 ];
 
 // Gallery (PRD §F8) — landing shows the latest done audit matching each pattern.
+// Patterns are SQL LIKE; no trailing % anchors the match to the end of the URL.
 export const GALLERY_SITES: ReadonlyArray<{ name: string; match: string }> = [
-  { name: 'Sunrise Bakery — demo site (broken)', match: '%fixtures/broken/index.html' },
-  { name: 'Sunrise Bakery — demo site (fixed)', match: '%fixtures/good/index.html' },
+  { name: 'Sunrise Bakery — demo site (broken)', match: '%aloud-demo-site/' },
+  { name: 'Sunrise Bakery — demo site (fixed)', match: '%aloud-demo-site/fixed/' },
   { name: 'example.com', match: 'https://example.com%' },
 ];
 
