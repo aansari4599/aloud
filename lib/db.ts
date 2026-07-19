@@ -33,10 +33,15 @@ CREATE INDEX IF NOT EXISTS idx_fixes_issue ON fixes(issue_id);
 
 /** Opens the SQLite database (WAL) and applies the DDL. Writes the db file. */
 function open(): Database.Database {
+  // `next build` imports route modules in parallel workers just to collect metadata;
+  // they must not race on (or dirty) the real db file — give them a throwaway one.
+  if (process.env.NEXT_PHASE === 'phase-production-build') {
+    const memory = new Database(':memory:');
+    memory.exec(DDL);
+    return memory;
+  }
   mkdirSync(dirname(DATABASE_PATH), { recursive: true });
   const database = new Database(DATABASE_PATH);
-  // next build evaluates route modules in parallel workers — they race on this open.
-  // busy_timeout makes contenders wait instead of throwing SQLITE_BUSY.
   database.pragma('busy_timeout = 5000');
   database.pragma('journal_mode = WAL');
   database.exec(DDL);
