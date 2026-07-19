@@ -1,12 +1,61 @@
 import Link from 'next/link';
 import { AuditForm } from '../components/AuditForm';
 import { GALLERY_SITES, GRADE_BANDS } from '../lib/constants';
-import { findLatestAuditByUrlPattern } from '../lib/db';
+import { findLatestAuditByUrlPattern, getRecentAudits } from '../lib/db';
 
 // Gallery reads the local db — fresh on every request, works with no external network.
 export const dynamic = 'force-dynamic';
 
 const gradeFor = (score: number): string => GRADE_BANDS.find((b) => score >= b.min)?.grade ?? 'F';
+
+const scoreColor = (score: number): string => {
+  if (score >= 90) return 'text-emerald-400';
+  if (score >= 65) return 'text-accent';
+  if (score >= 50) return 'text-orange-400';
+  return 'text-red-400';
+};
+
+const hostOf = (url: string): string => {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'file:'
+      ? (u.pathname.split('/').slice(-2).join('/') ?? url)
+      : u.host + (u.pathname === '/' ? '' : u.pathname);
+  } catch {
+    return url;
+  }
+};
+
+function RecentAudits() {
+  const recent = getRecentAudits(6);
+  if (recent.length === 0) return null;
+  return (
+    <section aria-labelledby="recent-heading" className="pb-8 pt-2">
+      <h2
+        id="recent-heading"
+        className="mb-4 text-sm font-semibold uppercase tracking-widest text-zinc-500"
+      >
+        Recent audits
+      </h2>
+      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {recent.map((a) => (
+          <li key={a.id}>
+            <Link
+              href={`/a/${a.id}`}
+              className="flex items-center justify-between gap-3 rounded-xl border border-surface-line bg-surface-raised/60 px-4 py-3 transition hover:border-accent/60"
+            >
+              <span className="min-w-0 flex-1 truncate text-sm text-zinc-300">{hostOf(a.url)}</span>
+              <span className={`font-mono text-lg font-bold ${scoreColor(a.scoreBefore)}`}>
+                {a.scoreBefore}
+              </span>
+              <span className="text-xs uppercase text-zinc-500">{gradeFor(a.scoreBefore)}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 export default function Landing() {
   return (
@@ -70,10 +119,13 @@ export default function Landing() {
             );
           })}
         </ul>
-        <p className="mt-8 text-center text-xs text-zinc-600">
-          AccessScore is a heuristic, not a WCAG certification.
-        </p>
       </section>
+
+      <RecentAudits />
+
+      <p className="pb-8 text-center text-xs text-zinc-600">
+        AccessScore is a heuristic, not a WCAG certification.
+      </p>
     </main>
   );
 }

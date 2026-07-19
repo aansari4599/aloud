@@ -140,6 +140,36 @@ const stmtLatestByUrl = db.prepare(
   `SELECT id, url, score_before FROM audits WHERE status = 'done' AND url LIKE ? ORDER BY created_at DESC LIMIT 1`,
 );
 
+const stmtRecentAudits = db.prepare(
+  `SELECT id, url, score_before, created_at FROM audits
+   WHERE status = 'done' AND score_before IS NOT NULL
+   ORDER BY created_at DESC LIMIT ?`,
+);
+
+/** Recent completed audits, deduplicated by URL (latest wins). Reads db. */
+export function getRecentAudits(limit: number): {
+  id: string;
+  url: string;
+  scoreBefore: number;
+  createdAt: string;
+}[] {
+  const rows = stmtRecentAudits.all(limit * 4) as {
+    id: string;
+    url: string;
+    score_before: number;
+    created_at: string;
+  }[];
+  const seen = new Set<string>();
+  const out: { id: string; url: string; scoreBefore: number; createdAt: string }[] = [];
+  for (const r of rows) {
+    if (seen.has(r.url)) continue;
+    seen.add(r.url);
+    out.push({ id: r.id, url: r.url, scoreBefore: r.score_before, createdAt: r.created_at });
+    if (out.length === limit) break;
+  }
+  return out;
+}
+
 /** Latest completed audit whose url matches a LIKE pattern (gallery lookup). Reads db. */
 export function findLatestAuditByUrlPattern(
   pattern: string,

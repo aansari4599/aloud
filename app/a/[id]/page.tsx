@@ -15,6 +15,44 @@ import type { AuditJob, Issue, PageResult, Severity } from '../../../lib/types';
 const SEVERITY_ORDER: Severity[] = ['critical', 'serious', 'moderate', 'minor'];
 const RUNNING = ['queued', 'loading', 'crawling', 'auditing', 'narrating', 'scoring'];
 
+// Friendly labels for the global status bar, in pipeline order.
+const STAGES: { key: string; label: string }[] = [
+  { key: 'queued', label: 'Waiting in queue…' },
+  { key: 'loading', label: 'Loading the page…' },
+  { key: 'crawling', label: 'Finding more pages…' },
+  { key: 'auditing', label: 'Running accessibility checks…' },
+  { key: 'narrating', label: 'Listening like a screen reader…' },
+  { key: 'scoring', label: 'Adding up the score…' },
+];
+
+/** Sticky top bar: which stage the audit is in, with overall progress. */
+function StatusBar({ status }: { status: string }) {
+  const idx = Math.max(
+    0,
+    STAGES.findIndex((s) => s.key === status),
+  );
+  const stage = STAGES[idx];
+  const pct = Math.round(((idx + 1) / (STAGES.length + 1)) * 100);
+  return (
+    <div className="sticky top-0 z-10 w-full border-b border-surface-line bg-surface/95 backdrop-blur">
+      <div className="mx-auto flex max-w-3xl items-center gap-3 px-6 py-2.5">
+        <span aria-hidden className="animate-pulse text-accent">
+          ●
+        </span>
+        <span className="flex-1 text-sm text-zinc-300" aria-live="polite">
+          {stage.label}
+        </span>
+        <span className="font-mono text-xs text-zinc-500">
+          step {idx + 1} of {STAGES.length}
+        </span>
+      </div>
+      <div className="h-0.5 bg-surface-line">
+        <div className="h-0.5 bg-accent transition-all duration-700" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 interface AuditPayload {
   job: AuditJob;
   pages?: PageResult[];
@@ -77,7 +115,7 @@ export default function AuditPage({ params }: { params: { id: string } }) {
   const running = RUNNING.includes(job.status);
 
   return (
-    <Shell>
+    <Shell statusBar={running ? <StatusBar status={job.status} /> : undefined}>
       <p className="break-all text-sm text-zinc-500">{job.url}</p>
 
       {running && <ProgressLog events={job.progress} running />}
@@ -218,19 +256,34 @@ function Results({
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({
+  children,
+  statusBar,
+}: {
+  children: React.ReactNode;
+  statusBar?: React.ReactNode;
+}) {
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col items-center gap-6 px-6 py-12">
-      <header className="flex w-full items-center gap-2">
-        <Link href="/" className="flex items-center gap-2 text-zinc-200">
-          <span aria-hidden className="text-accent">
-            ●
-          </span>
-          <span className="font-semibold tracking-wide">Aloud</span>
-        </Link>
-      </header>
-      {children}
-    </main>
+    <>
+      {statusBar}
+      <main className="mx-auto flex min-h-screen max-w-3xl flex-col items-center gap-6 px-6 py-12">
+        <header className="flex w-full items-center justify-between">
+          <Link href="/" className="flex items-center gap-2 text-zinc-200">
+            <span aria-hidden className="text-accent">
+              ●
+            </span>
+            <span className="font-semibold tracking-wide">Aloud</span>
+          </Link>
+          <Link
+            href="/"
+            className="rounded-lg border border-surface-line px-4 py-2 text-sm font-semibold text-zinc-300 hover:border-accent/60"
+          >
+            ← New audit
+          </Link>
+        </header>
+        {children}
+      </main>
+    </>
   );
 }
 
